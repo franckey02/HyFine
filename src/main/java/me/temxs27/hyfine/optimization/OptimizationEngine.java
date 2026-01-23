@@ -196,14 +196,24 @@ public class OptimizationEngine {
             // This affects how fast the world tries to run overall.
             int currentTargetTps = world.getTps(); // Get current target TPS
             if (currentTargetTps != targetTps) {
+                // Wrap the setTps call in a Runnable and execute it on the world's ECS thread
                 try {
-                    world.setTps(targetTps); // Attempt to set the new target TPS
-                    System.out.println("[HyFine] Applied target TPS=" + targetTps + " for preset " + preset.name() + " in world: " + worldName);
-                    LOGGER.info("[HyFine] Successfully set TPS to " + targetTps + " for world '" + worldName + "'");
+                    world.execute(() -> {
+                        try {
+                             world.setTps(targetTps); // Attempt to set the new target TPS
+                             // System.out.println("[HyFine] Applied target TPS=" + targetTps + " for preset " + preset.name() + " in world: " + worldName);
+                             LOGGER.info("[HyFine] Successfully set TPS to " + targetTps + " for world '" + worldName + "' on ECS thread.");
+                        } catch (Exception e) {
+                             // System.err.println("[HyFine] Failed to set TPS for world '" + worldName + "': " + e.getMessage());
+                             LOGGER.severe("[HyFine] Failed to set TPS for world '" + worldName + "' on ECS thread: " + e.getMessage());
+                             e.printStackTrace();
+                        }
+                    });
+                    LOGGER.info("[HyFine] Queued TPS change to " + targetTps + " for world '" + worldName + "' via world.execute().");
                 } catch (Exception e) {
-                    System.err.println("[HyFine] Failed to set TPS for world '" + worldName + "': " + e.getMessage());
-                    LOGGER.severe("[HyFine] Failed to set TPS for world '" + worldName + "': " + e.getMessage());
-                    e.printStackTrace();
+                     System.err.println("[HyFine] Failed to queue TPS change for world '" + worldName + "': " + e.getMessage());
+                     LOGGER.severe("[HyFine] Failed to queue TPS change for world '" + worldName + "' via world.execute(): " + e.getMessage());
+                     e.printStackTrace();
                 }
             } else {
                  LOGGER.fine("[HyFine] TPS for world '" + worldName + "' is already " + targetTps + ", no change needed.");
@@ -261,14 +271,24 @@ public class OptimizationEngine {
             if (data.tps < 15) {
                  int emergencyTps = 15; // Or even lower like 10
                  if (world.getTps() > emergencyTps) { // Only decrease if current target is higher
+                     // Wrap the emergency setTps call in a Runnable and execute it on the world's ECS thread
                      try {
-                         world.setTps(emergencyTps);
-                         System.out.println("[HyFine] Emergency: Set target TPS to " + emergencyTps + " due to very low TPS (" + data.tps + ") in world: " + worldName);
-                         LOGGER.warning("[HyFine] EMERGENCY: Set TPS to " + emergencyTps + " for world '" + worldName + "' due to low TPS (" + data.tps + ")");
+                         world.execute(() -> {
+                             try {
+                                 world.setTps(emergencyTps);
+                                 // System.out.println("[HyFine] Emergency: Set target TPS to " + emergencyTps + " due to very low TPS (" + data.tps + ") in world: " + worldName);
+                                 LOGGER.warning("[HyFine] EMERGENCY: Set TPS to " + emergencyTps + " for world '" + worldName + "' due to low TPS (" + data.tps + ") on ECS thread.");
+                             } catch (Exception e) {
+                                 // System.err.println("[HyFine] Failed to set emergency TPS for world '" + worldName + "': " + e.getMessage());
+                                 LOGGER.severe("[HyFine] Failed to set emergency TPS for world '" + worldName + "' on ECS thread: " + e.getMessage());
+                                 e.printStackTrace();
+                             }
+                         });
+                         LOGGER.info("[HyFine] Queued emergency TPS change to " + emergencyTps + " for world '" + worldName + "' via world.execute().");
                      } catch (Exception e) {
-                         System.err.println("[HyFine] Failed to set emergency TPS for world '" + worldName + "': " + e.getMessage());
-                         LOGGER.severe("[HyFine] Failed to set emergency TPS for world '" + worldName + "': " + e.getMessage());
-                         e.printStackTrace();
+                          System.err.println("[HyFine] Failed to queue emergency TPS change for world '" + worldName + "': " + e.getMessage());
+                          LOGGER.severe("[HyFine] Failed to queue emergency TPS change for world '" + worldName + "' via world.execute(): " + e.getMessage());
+                          e.printStackTrace();
                      }
                  }
                  // Example: Force faster item despawn in emergencies if the current preset allows longer times
@@ -285,14 +305,24 @@ public class OptimizationEngine {
             } else if (data.tps < 18 && preset == OptimizationPreset.BALANCED) { // Moderate adjustment for BALANCED preset
                  int moderateTps = 20;
                  if (world.getTps() > moderateTps) {
+                     // Wrap the moderate setTps call in a Runnable and execute it on the world's ECS thread
                      try {
-                         world.setTps(moderateTps);
-                         System.out.println("[HyFine] Moderate: Set target TPS to " + moderateTps + " due to moderate low TPS (" + data.tps + ") in world: " + worldName);
-                         LOGGER.info("[HyFine] MODERATE: Set TPS to " + moderateTps + " for world '" + worldName + "' due to moderate low TPS (" + data.tps + ")");
+                         world.execute(() -> {
+                             try {
+                                 world.setTps(moderateTps);
+                                 // System.out.println("[HyFine] Moderate: Set target TPS to " + moderateTps + " due to moderate low TPS (" + data.tps + ") in world: " + worldName);
+                                 LOGGER.info("[HyFine] MODERATE: Set TPS to " + moderateTps + " for world '" + worldName + "' due to moderate low TPS (" + data.tps + ") on ECS thread.");
+                             } catch (Exception e) {
+                                 // System.err.println("[HyFine] Failed to set moderate TPS for world '" + worldName + "': " + e.getMessage());
+                                 LOGGER.severe("[HyFine] Failed to set moderate TPS for world '" + worldName + "' on ECS thread: " + e.getMessage());
+                                 e.printStackTrace();
+                             }
+                         });
+                         LOGGER.info("[HyFine] Queued moderate TPS change to " + moderateTps + " for world '" + worldName + "' via world.execute().");
                      } catch (Exception e) {
-                         System.err.println("[HyFine] Failed to set moderate TPS for world '" + worldName + "': " + e.getMessage());
-                         LOGGER.severe("[HyFine] Failed to set moderate TPS for world '" + worldName + "': " + e.getMessage());
-                         e.printStackTrace();
+                          System.err.println("[HyFine] Failed to queue moderate TPS change for world '" + worldName + "': " + e.getMessage());
+                          LOGGER.severe("[HyFine] Failed to queue moderate TPS change for world '" + worldName + "' via world.execute(): " + e.getMessage());
+                          e.printStackTrace();
                      }
                  }
             }
