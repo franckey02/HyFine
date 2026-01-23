@@ -4,6 +4,8 @@ import com.hypixel.hytale.server.core.HytaleServer;
 import com.hypixel.hytale.event.EventBus; 
 import com.hypixel.hytale.server.core.universe.world.events.ecs.ChunkSaveEvent;
 import com.hypixel.hytale.server.core.universe.world.events.ecs.ChunkUnloadEvent;
+// Import necesario para WorldConfig
+import com.hypixel.hytale.server.core.universe.world.WorldConfig;
 
 import com.hypixel.hytale.component.system.CancellableEcsEvent; 
 import com.hypixel.hytale.component.system.ICancellableEcsEvent; 
@@ -22,7 +24,7 @@ import java.util.concurrent.TimeUnit;
  * The core optimization engine of the HyFine plugin.
  * It runs in a separate thread and applies optimizations based on the current preset and server performance.
  * Optimizations are applied by adjusting the world's target TPS and internal mod settings.
- * Note: Direct modification of WorldConfig from this thread is not possible due to API restrictions (requires CommandBuffer/ECS integration).
+ * Note: Direct modification of WorldConfig from this thread is possible based on PrefabEditSessionManager findings.
  * Alternative: Potential integration points could be EventBus, SpawningPlugin/NPCSpawningConfig, or a hypothetical ECS task scheduler.
  */
 public class OptimizationEngine {
@@ -191,18 +193,23 @@ public class OptimizationEngine {
                 }
             }
 
-            // --- MAGIC: Attempt to Modify WorldConfig via ECS Task (Hypothetical) ---
-            // This is pseudocode. You'd need a way to submit tasks to the ECS main thread.
-            // if (canSubmitEcsTasks()) { // Check if mechanism exists
-            //     submitEcsTask(world, () -> {
-            //         WorldConfig config = world.getWorldConfig();
-            //         config.setBlockTicking(shouldTickBlocks(preset, data.tps));
-            //         config.setSpawningNPC(shouldSpawnNPCs(preset, data.tps));
-            //         config.setIsAllNPCFrozen(shouldFreezeNPCs(preset, data.tps));
-            //         config.setCanUnloadChunks(allowUnload);
-            //         config.markChanged(); // Mark for propagation if needed
-            //     });
-            // }
+            // --- NEW: Apply WorldConfig Optimizations ---
+            // Try to modify WorldConfig directly (based on PrefabEditSessionManager)
+            try {
+                WorldConfig config = world.getWorldConfig(); // Get the current config
+                if (config != null) {
+                    // Apply optimizations based on preset and TPS
+                    config.setBlockTicking(shouldTickBlocks(preset, data.tps));
+                    config.setSpawningNPC(shouldSpawnNPCs(preset, data.tps));
+                    config.setIsAllNPCFrozen(shouldFreezeNPCs(preset, data.tps));
+                    config.setCanUnloadChunks(allowUnload);
+                    // Note: We don't call markChanged() here as it might be handled internally by the server.
+                    System.out.println("[HyFine] Applied WorldConfig optimizations for world: " + world.getName());
+                }
+            } catch (Exception e) {
+                System.err.println("[HyFine] Failed to modify WorldConfig for world '" + world.getName() + "': " + e.getMessage());
+                e.printStackTrace();
+            }
 
             // --- 2. Apply Emergency/Moderate TPS-based adjustments ---
             // Example: If TPS is critically low, force a lower TPS temporarily, regardless of preset (except maybe ULTRA which is already low)
@@ -335,48 +342,45 @@ public class OptimizationEngine {
 
     /**
      * Determines if blocks should tick based on preset and TPS.
-     * Used in hypothetical ECS task.
      *
      * @param preset The current optimization preset.
      * @param currentTps The current TPS of the world.
      * @return True if block ticking should be enabled, false otherwise.
      */
-    // private boolean shouldTickBlocks(OptimizationPreset preset, int currentTps) {
-    //     // Logic based on preset and TPS
-    //     if (preset == OptimizationPreset.ULTRA) return false;
-    //     if (currentTps < 12) return false; // Emergency
-    //     return true;
-    // }
+    private boolean shouldTickBlocks(OptimizationPreset preset, int currentTps) {
+        // Logic based on preset and TPS
+        if (preset == OptimizationPreset.ULTRA) return false;
+        if (currentTps < 12) return false; // Emergency
+        return true;
+    }
 
     /**
      * Determines if NPCs should spawn based on preset and TPS.
-     * Used in hypothetical ECS task.
      *
      * @param preset The current optimization preset.
      * @param currentTps The current TPS of the world.
      * @return True if NPC spawning should be enabled, false otherwise.
      */
-    // private boolean shouldSpawnNPCs(OptimizationPreset preset, int currentTps) {
-    //     // Logic based on preset and TPS
-    //     if (preset == OptimizationPreset.ULTRA) return false;
-    //     if (currentTps < 15) return false; // Emergency
-    //     return true;
-    // }
+    private boolean shouldSpawnNPCs(OptimizationPreset preset, int currentTps) {
+        // Logic based on preset and TPS
+        if (preset == OptimizationPreset.ULTRA) return false;
+        if (currentTps < 15) return false; // Emergency
+        return true;
+    }
 
     /**
      * Determines if all NPCs should be frozen based on preset and TPS.
-     * Used in hypothetical ECS task.
      *
      * @param preset The current optimization preset.
      * @param currentTps The current TPS of the world.
      * @return True if all NPCs should be frozen, false otherwise.
      */
-    // private boolean shouldFreezeNPCs(OptimizationPreset preset, int currentTps) {
-    //     // Logic based on preset and TPS
-    //     if (preset == OptimizationPreset.ULTRA) return true;
-    //     if (currentTps < 10) return true; // Emergency
-    //     return false;
-    // }
+    private boolean shouldFreezeNPCs(OptimizationPreset preset, int currentTps) {
+        // Logic based on preset and TPS
+        if (preset == OptimizationPreset.ULTRA) return true;
+        if (currentTps < 10) return true; // Emergency
+        return false;
+    }
 
     // --- Getters for State Influenced by Presets and Metrics ---
     // These can be used by other parts of the plugin (e.g., spawning systems, item despawn logic).
