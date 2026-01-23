@@ -14,6 +14,7 @@ import java.util.concurrent.TimeUnit;
  * It runs in a separate thread and applies optimizations based on the current preset and server performance.
  * Optimizations are applied by adjusting the world's target TPS and internal mod settings.
  * Note: Direct modification of WorldConfig from this thread is not possible due to API restrictions (requires CommandBuffer/ECS integration).
+ * Alternative: Potential integration points could be SpawningPlugin/NPCSpawningConfig or a hypothetical ECS task scheduler.
  */
 public class OptimizationEngine {
 
