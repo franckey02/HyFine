@@ -1,9 +1,11 @@
 .gradle
+libs/
 build/
 !gradle/wrapper/gradle-wrapper.jar
 !**/src/main/**/build/
 !**/src/test/**/build/
 .kotlin
+*.jar
 
 ### IntelliJ IDEA ###
 .idea/modules.xml
