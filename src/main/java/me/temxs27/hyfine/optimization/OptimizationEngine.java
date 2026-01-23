@@ -19,6 +19,8 @@ import me.temxs27.hyfine.preset.OptimizationPreset;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.TimeUnit;
+import java.util.logging.Level; // Import necesario para Level
+import java.util.logging.Logger; // Import necesario para Logger
 
 /**
  * The core optimization engine of the HyFine plugin.
@@ -28,6 +30,11 @@ import java.util.concurrent.TimeUnit;
  * Alternative: Potential integration points could be EventBus, SpawningPlugin/NPCSpawningConfig, or a hypothetical ECS task scheduler.
  */
 public class OptimizationEngine {
+
+    // Logger instance for this class
+    private static final Logger LOGGER = Logger.getLogger(OptimizationEngine.class.getName());
+    // Optionally, set the level here if needed, though it often depends on the root logger configuration
+    // static { LOGGER.setLevel(Level.ALL); } // Uncomment if you want to ensure FINE logs appear
 
     private final HyFine plugin;
     private Thread optimizationThread;
@@ -127,10 +134,13 @@ public class OptimizationEngine {
     private void applyOptimizations() {
         Universe universe = Universe.get();
         if (universe == null) {
+            LOGGER.warning("[HyFine] Universe is null, skipping optimization cycle.");
             return;
         }
 
         OptimizationPreset preset = OptimizationManager.getPreset();
+        LOGGER.info("[HyFine] Starting optimization cycle for preset: " + preset.name());
+
         // PerformanceMonitor.PerformanceData globalData = plugin.getPerformanceMonitor().getGlobalData(); // Removed: Method does not exist
 
         // Determine base settings based on the preset
@@ -173,12 +183,14 @@ public class OptimizationEngine {
 
         // Apply preset-based settings and TPS adjustments to all worlds
         for (World world : universe.getWorlds().values()) {
-            PerformanceMonitor.PerformanceData data = plugin.getPerformanceMonitor().getData(world.getName());
+            String worldName = world.getName();
+            PerformanceMonitor.PerformanceData data = plugin.getPerformanceMonitor().getData(worldName);
 
             // --- MAGIC: Update Event-Based Policy Maps ---
             // Store the current policy for this world based on preset and performance
-            savePolicyMap.put(world.getName(), allowSave);
-            unloadPolicyMap.put(world.getName(), allowUnload);
+            savePolicyMap.put(worldName, allowSave);
+            unloadPolicyMap.put(worldName, allowUnload);
+            LOGGER.info("[HyFine] Updated policy maps for world '" + worldName + "': Save=" + allowSave + ", Unload=" + allowUnload);
 
             // --- 1. Adjust Target TPS based on preset and current performance ---
             // This affects how fast the world tries to run overall.
@@ -186,11 +198,15 @@ public class OptimizationEngine {
             if (currentTargetTps != targetTps) {
                 try {
                     world.setTps(targetTps); // Attempt to set the new target TPS
-                    System.out.println("[HyFine] Applied target TPS=" + targetTps + " for preset " + preset.name() + " in world: " + world.getName());
+                    System.out.println("[HyFine] Applied target TPS=" + targetTps + " for preset " + preset.name() + " in world: " + worldName);
+                    LOGGER.info("[HyFine] Successfully set TPS to " + targetTps + " for world '" + worldName + "'");
                 } catch (Exception e) {
-                    System.err.println("[HyFine] Failed to set TPS for world '" + world.getName() + "': " + e.getMessage());
+                    System.err.println("[HyFine] Failed to set TPS for world '" + worldName + "': " + e.getMessage());
+                    LOGGER.severe("[HyFine] Failed to set TPS for world '" + worldName + "': " + e.getMessage());
                     e.printStackTrace();
                 }
+            } else {
+                 LOGGER.fine("[HyFine] TPS for world '" + worldName + "' is already " + targetTps + ", no change needed.");
             }
 
             // --- NEW: Apply WorldConfig Optimizations ---
@@ -198,17 +214,45 @@ public class OptimizationEngine {
             try {
                 WorldConfig config = world.getWorldConfig(); // Get the current config
                 if (config != null) {
+                    // Get current values for logging
+                    boolean currentBlockTicking = config.isBlockTicking();
+                    boolean currentSpawningNPC = config.isSpawningNPC();
+                    boolean currentIsAllNPCFrozen = config.isAllNPCFrozen();
+                    boolean currentCanUnloadChunks = config.canUnloadChunks();
+
                     // Apply optimizations based on preset and TPS
-                    config.setBlockTicking(shouldTickBlocks(preset, data.tps));
-                    config.setSpawningNPC(shouldSpawnNPCs(preset, data.tps));
-                    config.setIsAllNPCFrozen(shouldFreezeNPCs(preset, data.tps));
-                    config.setCanUnloadChunks(allowUnload);
+                    boolean newBlockTicking = shouldTickBlocks(preset, data.tps);
+                    boolean newSpawningNPC = shouldSpawnNPCs(preset, data.tps);
+                    boolean newIsAllNPCFrozen = shouldFreezeNPCs(preset, data.tps);
+                    boolean newCanUnloadChunks = allowUnload;
+
+                    if (currentBlockTicking != newBlockTicking) {
+                        config.setBlockTicking(newBlockTicking);
+                        LOGGER.info("[HyFine] Changed blockTicking for world '" + worldName + "' from " + currentBlockTicking + " to " + newBlockTicking);
+                    }
+                    if (currentSpawningNPC != newSpawningNPC) {
+                        config.setSpawningNPC(newSpawningNPC);
+                        LOGGER.info("[HyFine] Changed spawningNPC for world '" + worldName + "' from " + currentSpawningNPC + " to " + newSpawningNPC);
+                    }
+                    if (currentIsAllNPCFrozen != newIsAllNPCFrozen) {
+                        config.setIsAllNPCFrozen(newIsAllNPCFrozen);
+                        LOGGER.info("[HyFine] Changed isAllNPCFrozen for world '" + worldName + "' from " + currentIsAllNPCFrozen + " to " + newIsAllNPCFrozen);
+                    }
+                    if (currentCanUnloadChunks != newCanUnloadChunks) {
+                        config.setCanUnloadChunks(newCanUnloadChunks);
+                        LOGGER.info("[HyFine] Changed canUnloadChunks for world '" + worldName + "' from " + currentCanUnloadChunks + " to " + newCanUnloadChunks);
+                    }
+
                     // IMPORTANT: Call markChanged() to notify the server that the config has changed (based on SpawnCommand.java)
                     config.markChanged(); // <-- AÑADIDA ESTA LINEA CRUCIAL
-                    System.out.println("[HyFine] Applied WorldConfig optimizations for world: " + world.getName());
+                    System.out.println("[HyFine] Applied WorldConfig optimizations for world: " + worldName);
+                    LOGGER.info("[HyFine] Applied WorldConfig optimizations and called markChanged() for world '" + worldName + "'");
+                } else {
+                    LOGGER.warning("[HyFine] WorldConfig for world '" + worldName + "' is null, skipping.");
                 }
             } catch (Exception e) {
-                System.err.println("[HyFine] Failed to modify WorldConfig for world '" + world.getName() + "': " + e.getMessage());
+                System.err.println("[HyFine] Failed to modify WorldConfig for world '" + worldName + "': " + e.getMessage());
+                LOGGER.severe("[HyFine] Failed to modify WorldConfig for world '" + worldName + "': " + e.getMessage());
                 e.printStackTrace();
             }
 
@@ -219,29 +263,35 @@ public class OptimizationEngine {
                  if (world.getTps() > emergencyTps) { // Only decrease if current target is higher
                      try {
                          world.setTps(emergencyTps);
-                         System.out.println("[HyFine] Emergency: Set target TPS to " + emergencyTps + " due to very low TPS (" + data.tps + ") in world: " + world.getName());
+                         System.out.println("[HyFine] Emergency: Set target TPS to " + emergencyTps + " due to very low TPS (" + data.tps + ") in world: " + worldName);
+                         LOGGER.warning("[HyFine] EMERGENCY: Set TPS to " + emergencyTps + " for world '" + worldName + "' due to low TPS (" + data.tps + ")");
                      } catch (Exception e) {
-                         System.err.println("[HyFine] Failed to set emergency TPS for world '" + world.getName() + "': " + e.getMessage());
+                         System.err.println("[HyFine] Failed to set emergency TPS for world '" + worldName + "': " + e.getMessage());
+                         LOGGER.severe("[HyFine] Failed to set emergency TPS for world '" + worldName + "': " + e.getMessage());
                          e.printStackTrace();
                      }
                  }
                  // Example: Force faster item despawn in emergencies if the current preset allows longer times
                  if (this.itemDespawnTicks > 1200) { // Only if current preset allows longer times
                       this.itemDespawnTicks = 1200; // 1 minute
-                      System.out.println("[HyFine] Emergency: Set itemDespawnTicks to 1200 due to low TPS (" + data.tps + ") in world: " + world.getName());
+                      System.out.println("[HyFine] Emergency: Set itemDespawnTicks to 1200 due to low TPS (" + data.tps + ") in world: " + worldName);
+                      LOGGER.info("[HyFine] EMERGENCY: Set itemDespawnTicks to 1200 for world '" + worldName + "' due to low TPS (" + data.tps + ")");
                  }
                  // Example: Force prevent unloading/saving in emergencies (if policy allows)
                  // Update policy maps again for emergency
-                 savePolicyMap.put(world.getName(), false); // Prevent save in emergency
-                 unloadPolicyMap.put(world.getName(), false); // Prevent unload in emergency
+                 savePolicyMap.put(worldName, false); // Prevent save in emergency
+                 unloadPolicyMap.put(worldName, false); // Prevent unload in emergency
+                 LOGGER.info("[HyFine] EMERGENCY: Updated policy maps for world '" + worldName + "': Save=false, Unload=false");
             } else if (data.tps < 18 && preset == OptimizationPreset.BALANCED) { // Moderate adjustment for BALANCED preset
                  int moderateTps = 20;
                  if (world.getTps() > moderateTps) {
                      try {
                          world.setTps(moderateTps);
-                         System.out.println("[HyFine] Moderate: Set target TPS to " + moderateTps + " due to moderate low TPS (" + data.tps + ") in world: " + world.getName());
+                         System.out.println("[HyFine] Moderate: Set target TPS to " + moderateTps + " due to moderate low TPS (" + data.tps + ") in world: " + worldName);
+                         LOGGER.info("[HyFine] MODERATE: Set TPS to " + moderateTps + " for world '" + worldName + "' due to moderate low TPS (" + data.tps + ")");
                      } catch (Exception e) {
-                         System.err.println("[HyFine] Failed to set moderate TPS for world '" + world.getName() + "': " + e.getMessage());
+                         System.err.println("[HyFine] Failed to set moderate TPS for world '" + worldName + "': " + e.getMessage());
+                         LOGGER.severe("[HyFine] Failed to set moderate TPS for world '" + worldName + "': " + e.getMessage());
                          e.printStackTrace();
                      }
                  }
@@ -253,6 +303,7 @@ public class OptimizationEngine {
             this.estimatedEntityCount = data.entityCount; // From PerformanceMonitor (even if estimated)
             // this.estimatedChunkCount = getEstimatedChunkCount(world); // Would need implementation
         }
+        LOGGER.info("[HyFine] Completed optimization cycle for preset: " + preset.name());
     }
 
     // --- MAGIC: Placeholder Methods for Advanced Features ---
@@ -277,6 +328,7 @@ public class OptimizationEngine {
                         // event.cancel(); // REMOVED: CancellableEcsEvent doesn't have cancel() method
                         event.setCancelled(true); // CORRECT: Use setCancelled(true) instead
                         System.out.println("[HyFine] Cancelled chunk save in world '" + worldName + "' based on policy.");
+                        LOGGER.info("[HyFine] Cancelled chunk save event for chunk in world '" + worldName + "'");
                     }
                 });
 
@@ -289,14 +341,18 @@ public class OptimizationEngine {
                         // event.cancel(); // REMOVED: CancellableEcsEvent doesn't have cancel() method
                         event.setCancelled(true); // CORRECT: Use setCancelled(true) instead
                         System.out.println("[HyFine] Cancelled chunk unload in world '" + worldName + "' based on policy.");
+                        LOGGER.info("[HyFine] Cancelled chunk unload event for chunk in world '" + worldName + "'");
                     }
                 });
                 System.out.println("[HyFine] Registered event listeners for chunk save/unload.");
+                LOGGER.info("[HyFine] Successfully registered event listeners for ChunkSaveEvent and ChunkUnloadEvent.");
             } else {
                 System.out.println("[HyFine] WARNING: Could not access EventBus. Chunk save/unload policies will not work.");
+                LOGGER.severe("[HyFine] Could not access EventBus. Chunk save/unload policies will not work.");
             }
         } catch (Exception e) {
              System.err.println("[HyFine] Error accessing EventBus: " + e.getMessage());
+             LOGGER.severe("[HyFine] Error accessing EventBus: " + e.getMessage());
              e.printStackTrace();
         }
     }
@@ -312,9 +368,11 @@ public class OptimizationEngine {
             // Since we didn't capture the registration objects, we'll rely on the fact that the listeners are weakly referenced or that the EventBus handles cleanup when the plugin stops.
             // For now, just log.
             System.out.println("[HyFine] Event listeners are active. They may be automatically cleaned up by the EventBus upon shutdown.");
+            LOGGER.info("[HyFine] Event listeners cleanup requested. They may be automatically cleaned up by the EventBus.");
             // In a real scenario, you might need to store the EventRegistration objects and call .unregister() on them.
         }
         System.out.println("[HyFine] Cleaning up event listeners... (Done)");
+        LOGGER.info("[HyFine] Cleaning up event listeners... (Done)");
     }
 
 
@@ -350,9 +408,18 @@ public class OptimizationEngine {
      */
     private boolean shouldTickBlocks(OptimizationPreset preset, int currentTps) {
         // Logic based on preset and TPS
-        if (preset == OptimizationPreset.ULTRA) return false;
-        if (currentTps < 12) return false; // Emergency
-        return true;
+        boolean result;
+        if (preset == OptimizationPreset.ULTRA) {
+            result = false;
+            LOGGER.fine("[shouldTickBlocks] Returning false: preset is ULTRA.");
+        } else if (currentTps < 12) {
+            result = false;
+            LOGGER.fine("[shouldTickBlocks] Returning false: current TPS (" + currentTps + ") is below emergency threshold (12).");
+        } else {
+            result = true;
+            LOGGER.fine("[shouldTickBlocks] Returning true: preset is not ULTRA and TPS (" + currentTps + ") is above emergency threshold.");
+        }
+        return result;
     }
 
     /**
@@ -364,9 +431,18 @@ public class OptimizationEngine {
      */
     private boolean shouldSpawnNPCs(OptimizationPreset preset, int currentTps) {
         // Logic based on preset and TPS
-        if (preset == OptimizationPreset.ULTRA) return false;
-        if (currentTps < 15) return false; // Emergency
-        return true;
+        boolean result;
+        if (preset == OptimizationPreset.ULTRA) {
+            result = false;
+            LOGGER.fine("[shouldSpawnNPCs] Returning false: preset is ULTRA.");
+        } else if (currentTps < 15) {
+            result = false;
+            LOGGER.fine("[shouldSpawnNPCs] Returning false: current TPS (" + currentTps + ") is below emergency threshold (15).");
+        } else {
+            result = true;
+            LOGGER.fine("[shouldSpawnNPCs] Returning true: preset is not ULTRA and TPS (" + currentTps + ") is above emergency threshold.");
+        }
+        return result;
     }
 
     /**
@@ -378,9 +454,18 @@ public class OptimizationEngine {
      */
     private boolean shouldFreezeNPCs(OptimizationPreset preset, int currentTps) {
         // Logic based on preset and TPS
-        if (preset == OptimizationPreset.ULTRA) return true;
-        if (currentTps < 10) return true; // Emergency
-        return false;
+        boolean result;
+        if (preset == OptimizationPreset.ULTRA) {
+            result = true;
+            LOGGER.fine("[shouldFreezeNPCs] Returning true: preset is ULTRA.");
+        } else if (currentTps < 10) {
+            result = true;
+            LOGGER.fine("[shouldFreezeNPCs] Returning true: current TPS (" + currentTps + ") is below emergency threshold (10).");
+        } else {
+            result = false;
+            LOGGER.fine("[shouldFreezeNPCs] Returning false: preset is not ULTRA and TPS (" + currentTps + ") is above emergency threshold.");
+        }
+        return result;
     }
 
     // --- Getters for State Influenced by Presets and Metrics ---

@@ -4,5 +4,10 @@
   "Version": "1.1.0",
   "Main": "me.temxs27.hyfine.HyFine",
   "Description": "Server-side performance optimizer",
+  "Authors": [
+    {
+      "Name": "Temxs27"
+    }
+  ],
   "IncludeAssetPack": false
 }
