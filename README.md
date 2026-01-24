@@ -23,4 +23,4 @@ Settings are applied automatically based on the selected preset and server confi
 
 ## License
 
-See LICENSE.md
+Read the file LICENSE
