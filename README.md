@@ -18,8 +18,12 @@ HyFine is a mod for Hytale Server designed to optimize server performance by app
 2.  Restart the server to load the plugin.
 
 ## Usage
+/hyflow
+/hyfbalanced
+/hyfultra
 
-Settings are applied automatically based on the selected preset and server configuration. Currently, there are no public commands to change the preset manually, but it can be configured in the plugin's code.
+
+Note: run before /op self (if you're not Op)
 
 ## License
 
