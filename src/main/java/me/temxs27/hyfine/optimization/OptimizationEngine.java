@@ -6,6 +6,7 @@ import com.hypixel.hytale.server.core.universe.world.events.ecs.ChunkSaveEvent;
 import com.hypixel.hytale.server.core.universe.world.events.ecs.ChunkUnloadEvent;
 
 import com.hypixel.hytale.server.core.universe.world.WorldConfig;
+import com.hypixel.hytale.server.core.universe.world.ClientEffectWorldSettings; // Import para efectos visuales
 
 import com.hypixel.hytale.component.system.CancellableEcsEvent; 
 import com.hypixel.hytale.component.system.ICancellableEcsEvent; 
@@ -64,6 +65,7 @@ public class OptimizationEngine {
     private static final boolean LOW_ALLOW_UNLOAD = true; // Allow chunk unloading
     private static final boolean LOW_ALLOW_SAVE = true;   // Allow chunk saving
     private static final int LOW_CLIENT_VIEW_RADIUS = 5; // Reduced slightly
+    private static final boolean LOW_DISABLE_VISUAL_EFFECTS = false; // Keep effects enabled
 
     // BALANCED preset settings (default server behavior assumed)
     private static final int BALANCED_ITEM_DESPAWN_TICKS = 3600; // 3 minutes
@@ -71,6 +73,7 @@ public class OptimizationEngine {
     private static final boolean BALANCED_ALLOW_UNLOAD = true;
     private static final boolean BALANCED_ALLOW_SAVE = true;
     private static final int BALANCED_CLIENT_VIEW_RADIUS = 4; // Reduced slightly
+    private static final boolean BALANCED_DISABLE_VISUAL_EFFECTS = false; // Keep effects enabled
 
     // ULTRA preset settings
     private static final int ULTRA_ITEM_DESPAWN_TICKS = 1200; // 1 minute
@@ -78,6 +81,7 @@ public class OptimizationEngine {
     private static final boolean ULTRA_ALLOW_UNLOAD = false; // Prevent chunk unloading (keep memory high, reduce I/O)
     private static final boolean ULTRA_ALLOW_SAVE = false;   // Prevent chunk saving (keep memory high, reduce I/O)
     private static final int ULTRA_CLIENT_VIEW_RADIUS = 3; // Reduced further, but not extremely
+    private static final boolean ULTRA_DISABLE_VISUAL_EFFECTS = true; // Disable visual effects
 
     // --- State for Event-Based Policies ---
     // Map to store the current policy for each world
@@ -159,6 +163,7 @@ public class OptimizationEngine {
         boolean allowUnload;
         boolean allowSave;
         int clientViewRadius; // Added for view radius optimization
+        boolean disableVisualEffects; // Added for visual effects optimization
 
         switch (preset) {
             case LOW:
@@ -167,6 +172,7 @@ public class OptimizationEngine {
                 allowUnload = LOW_ALLOW_UNLOAD;
                 allowSave = LOW_ALLOW_SAVE;
                 clientViewRadius = LOW_CLIENT_VIEW_RADIUS; // Assign value based on preset
+                disableVisualEffects = LOW_DISABLE_VISUAL_EFFECTS; // Assign value based on preset
                 aggressiveMode = false;
                 break;
             case BALANCED:
@@ -175,6 +181,7 @@ public class OptimizationEngine {
                 allowUnload = BALANCED_ALLOW_UNLOAD;
                 allowSave = BALANCED_ALLOW_SAVE;
                 clientViewRadius = BALANCED_CLIENT_VIEW_RADIUS; // Assign value based on preset
+                disableVisualEffects = BALANCED_DISABLE_VISUAL_EFFECTS; // Assign value based on preset
                 aggressiveMode = false;
                 break;
             case ULTRA:
@@ -183,6 +190,7 @@ public class OptimizationEngine {
                 allowUnload = ULTRA_ALLOW_UNLOAD; // Prevent unloading
                 allowSave = ULTRA_ALLOW_SAVE;     // Prevent saving
                 clientViewRadius = ULTRA_CLIENT_VIEW_RADIUS; // Assign value based on preset
+                disableVisualEffects = ULTRA_DISABLE_VISUAL_EFFECTS; // Assign value based on preset
                 aggressiveMode = true;
                 break;
             default:
@@ -192,6 +200,7 @@ public class OptimizationEngine {
                 allowUnload = BALANCED_ALLOW_UNLOAD;
                 allowSave = BALANCED_ALLOW_SAVE;
                 clientViewRadius = BALANCED_CLIENT_VIEW_RADIUS; // Assign value based on preset
+                disableVisualEffects = BALANCED_DISABLE_VISUAL_EFFECTS; // Assign value based on preset
                 aggressiveMode = false;
                 break;
         }
@@ -266,6 +275,50 @@ public class OptimizationEngine {
                     if (currentCanUnloadChunks != newCanUnloadChunks) {
                         config.setCanUnloadChunks(newCanUnloadChunks);
                         LOGGER.info("[HyFine] Changed canUnloadChunks for world '" + worldName + "' from " + currentCanUnloadChunks + " to " + newCanUnloadChunks);
+                    }
+
+                    // --- NEW: Apply Client Effect Optimizations ---
+                    ClientEffectWorldSettings clientEffects = config.getClientEffects();
+                    if (clientEffects != null) {
+                        float currentBloomIntensity = clientEffects.getBloomIntensity();
+                        float currentBloomPower = clientEffects.getBloomPower();
+                        float currentSunshaftIntensity = clientEffects.getSunshaftIntensity();
+                        // Add more checks for other effects if needed
+
+                        if (disableVisualEffects) {
+                            // Disable effects
+                            if (currentBloomIntensity != 0.0f) {
+                                clientEffects.setBloomIntensity(0.0f);
+                                LOGGER.info("[HyFine] Disabled Bloom Intensity for world '" + worldName + "'");
+                            }
+                            if (currentBloomPower != 0.0f) {
+                                clientEffects.setBloomPower(0.0f);
+                                LOGGER.info("[HyFine] Disabled Bloom Power for world '" + worldName + "'");
+                            }
+                            if (currentSunshaftIntensity != 0.0f) {
+                                clientEffects.setSunshaftIntensity(0.0f);
+                                LOGGER.info("[HyFine] Disabled Sunshaft Intensity for world '" + worldName + "'");
+                            }
+                            // Add more disables for other effects if needed
+                        } else {
+                            // Re-enable effects to default values if they were disabled previously
+                            // For simplicity, we'll assume defaults are known and only check if they were 0.0f before
+                            // A more robust solution would track the original values
+                            if (currentBloomIntensity == 0.0f) {
+                                clientEffects.setBloomIntensity(0.3f); // Default value
+                                LOGGER.info("[HyFine] Re-enabled Bloom Intensity for world '" + worldName + "' to default");
+                            }
+                            if (currentBloomPower == 0.0f) {
+                                clientEffects.setBloomPower(8.0f); // Default value
+                                LOGGER.info("[HyFine] Re-enabled Bloom Power for world '" + worldName + "' to default");
+                            }
+                            if (currentSunshaftIntensity == 0.0f) {
+                                clientEffects.setSunshaftIntensity(0.3f); // Default value
+                                LOGGER.info("[HyFine] Re-enabled Sunshaft Intensity for world '" + worldName + "' to default");
+                            }
+                        }
+                    } else {
+                        LOGGER.warning("[HyFine] ClientEffectWorldSettings for world '" + worldName + "' is null, skipping visual effect optimization.");
                     }
 
                     // IMPORTANT: Call markChanged() to notify the server that the config has changed (based on SpawnCommand.java)
@@ -568,13 +621,19 @@ public class OptimizationEngine {
      */
     private boolean shouldFreezeNPCs(OptimizationPreset preset, int currentTps) {
         // Logic based on preset and TPS
+        // --- REMOVED CONGEALMENT FROM PRESETS ---
+        // Keeping the logic structure in case it's needed for a separate command/system later.
         boolean result;
         if (preset == OptimizationPreset.ULTRA) {
-            result = false;       //disable for cheating XD
-            LOGGER.fine("[shouldFreezeNPCs] Returning true: preset is ULTRA.");
+            // Even for ULTRA, we might prefer despawn over freeze for realism.
+            // result = true; // OLD LOGIC
+            result = false; // NEW LOGIC: Don't freeze NPCs in presets
+            LOGGER.fine("[shouldFreezeNPCs] Returning false: preset is ULTRA, but freezing is disabled in presets.");
         } else if (currentTps < 10) {
-            result = false;
-            LOGGER.fine("[shouldFreezeNPCs] Returning true: current TPS (" + currentTps + ") is below emergency threshold (10).");
+            // Keep emergency freeze if TPS is extremely critical, although despawn might be preferred.
+            // result = true; // OLD LOGIC
+            result = false; // NEW LOGIC: Don't freeze NPCs in presets, even in emergencies.
+            LOGGER.fine("[shouldFreezeNPCs] Returning false: current TPS (" + currentTps + ") is below emergency threshold (10), but freezing is disabled in presets.");
         } else {
             result = false;
             LOGGER.fine("[shouldFreezeNPCs] Returning false: preset is not ULTRA and TPS (" + currentTps + ") is above emergency threshold.");
