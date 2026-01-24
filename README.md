@@ -14,7 +14,7 @@ HyFine is a mod for Hytale Server designed to optimize server performance by app
 
 ## Installation
 
-1.  Place the HyFine `.jar` file into your Hytale server's `plugins` folder.
+1.  Place the HyFine `.jar` file into your Hytale server's `Mods` folder.
 2.  Restart the server to load the plugin.
 
 ## Usage
