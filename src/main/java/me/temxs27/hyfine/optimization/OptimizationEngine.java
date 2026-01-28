@@ -6,7 +6,7 @@ import com.hypixel.hytale.server.core.universe.world.events.ecs.ChunkSaveEvent;
 import com.hypixel.hytale.server.core.universe.world.events.ecs.ChunkUnloadEvent;
 
 import com.hypixel.hytale.server.core.universe.world.WorldConfig;
-import com.hypixel.hytale.server.core.universe.world.ClientEffectWorldSettings; // Import para efectos visuales
+import com.hypixel.hytale.server.core.universe.world.ClientEffectWorldSettings; 
 
 import com.hypixel.hytale.component.system.CancellableEcsEvent; 
 import com.hypixel.hytale.component.system.ICancellableEcsEvent; 
@@ -18,6 +18,12 @@ import com.hypixel.hytale.server.core.modules.entity.tracker.EntityTrackerSystem
 import com.hypixel.hytale.protocol.packets.setup.ViewRadius; // Import for ViewRadius packet
 import com.hypixel.hytale.component.ComponentType; // Import for ComponentType
 import com.hypixel.hytale.server.core.universe.world.storage.EntityStore; // Import for EntityStore
+
+// --- NEW: Imports for Proactive Despawn ---
+import com.hypixel.hytale.server.spawning.world.component.WorldSpawnData;
+import com.hypixel.hytale.server.spawning.world.WorldEnvironmentSpawnData;
+import com.hypixel.hytale.server.spawning.world.WorldNPCSpawnStat;
+import it.unimi.dsi.fastutil.ints.Int2ObjectMap; // Import for Int2ObjectMap (used by WorldEnvironmentSpawnData)
 
 import me.temxs27.hyfine.HyFine;
 import me.temxs27.hyfine.core.OptimizationManager;
@@ -66,6 +72,9 @@ public class OptimizationEngine {
     private static final boolean LOW_ALLOW_SAVE = true;   // Allow chunk saving
     private static final int LOW_CLIENT_VIEW_RADIUS = 5; // Reduced slightly
     private static final boolean LOW_DISABLE_VISUAL_EFFECTS = false; // Keep effects enabled
+    // NEW: Sun settings for LOW preset
+    private static final float LOW_SUN_HEIGHT_PERCENT = 100.0f; // Default
+    private static final float LOW_SUN_INTENSITY = 0.25f; // Default
 
     // BALANCED preset settings (default server behavior assumed)
     private static final int BALANCED_ITEM_DESPAWN_TICKS = 3600; // 3 minutes
@@ -74,6 +83,9 @@ public class OptimizationEngine {
     private static final boolean BALANCED_ALLOW_SAVE = true;
     private static final int BALANCED_CLIENT_VIEW_RADIUS = 4; // Reduced slightly
     private static final boolean BALANCED_DISABLE_VISUAL_EFFECTS = false; // Keep effects enabled
+    // NEW: Sun settings for BALANCED preset
+    private static final float BALANCED_SUN_HEIGHT_PERCENT = 100.0f; // Default
+    private static final float BALANCED_SUN_INTENSITY = 0.25f; // Default
 
     // ULTRA preset settings
     private static final int ULTRA_ITEM_DESPAWN_TICKS = 1200; // 1 minute
@@ -82,6 +94,15 @@ public class OptimizationEngine {
     private static final boolean ULTRA_ALLOW_SAVE = false;   // Prevent chunk saving (keep memory high, reduce I/O)
     private static final int ULTRA_CLIENT_VIEW_RADIUS = 3; // Reduced further, but not extremely
     private static final boolean ULTRA_DISABLE_VISUAL_EFFECTS = true; // Disable visual effects
+    // NEW: Sun settings for ULTRA preset (more aggressive reduction)
+    private static final float ULTRA_SUN_HEIGHT_PERCENT = 0.0f; // Minimize sun visibility
+    private static final float ULTRA_SUN_INTENSITY = 0.0f; // Minimize sun intensity
+
+    // --- NEW: Thresholds for proactive despawn based on preset ---
+    private static final int HYFINE_LOW_NPC_THRESHOLD = 70;
+    private static final int HYFINE_BALANCED_NPC_THRESHOLD = 50;
+    private static final int HYFINE_ULTRA_NPC_THRESHOLD = 25;
+    private static final int HYFINE_DESPAWN_BATCH_SIZE = 10;
 
     // --- State for Event-Based Policies ---
     // Map to store the current policy for each world
@@ -158,49 +179,69 @@ public class OptimizationEngine {
         // PerformanceMonitor.PerformanceData globalData = plugin.getPerformanceMonitor().getGlobalData(); // Removed: Method does not exist
 
         // Determine base settings based on the preset
+        int despawnThreshold;
         int despawnTicks;
         int targetTps;
         boolean allowUnload;
         boolean allowSave;
         int clientViewRadius; // Added for view radius optimization
         boolean disableVisualEffects; // Added for visual effects optimization
+        // NEW: Variables for sun settings (excluding angle)
+        float sunHeightPercent;
+        float sunIntensity;
 
         switch (preset) {
             case LOW:
+                despawnThreshold = HYFINE_LOW_NPC_THRESHOLD; 
                 despawnTicks = LOW_ITEM_DESPAWN_TICKS;
                 targetTps = LOW_TARGET_TPS;
                 allowUnload = LOW_ALLOW_UNLOAD;
                 allowSave = LOW_ALLOW_SAVE;
                 clientViewRadius = LOW_CLIENT_VIEW_RADIUS; // Assign value based on preset
                 disableVisualEffects = LOW_DISABLE_VISUAL_EFFECTS; // Assign value based on preset
+                // NEW: Assign sun settings based on preset
+                sunHeightPercent = LOW_SUN_HEIGHT_PERCENT;
+                sunIntensity = LOW_SUN_INTENSITY;
                 aggressiveMode = false;
                 break;
             case BALANCED:
+                despawnThreshold = HYFINE_BALANCED_NPC_THRESHOLD;
                 despawnTicks = BALANCED_ITEM_DESPAWN_TICKS;
                 targetTps = BALANCED_TARGET_TPS;
                 allowUnload = BALANCED_ALLOW_UNLOAD;
                 allowSave = BALANCED_ALLOW_SAVE;
                 clientViewRadius = BALANCED_CLIENT_VIEW_RADIUS; // Assign value based on preset
                 disableVisualEffects = BALANCED_DISABLE_VISUAL_EFFECTS; // Assign value based on preset
+                // NEW: Assign sun settings based on preset
+                sunHeightPercent = BALANCED_SUN_HEIGHT_PERCENT;
+                sunIntensity = BALANCED_SUN_INTENSITY;
                 aggressiveMode = false;
                 break;
             case ULTRA:
+                despawnThreshold = HYFINE_ULTRA_NPC_THRESHOLD;
                 despawnTicks = ULTRA_ITEM_DESPAWN_TICKS;
                 targetTps = ULTRA_TARGET_TPS; // Lower TPS for ultra preset
                 allowUnload = ULTRA_ALLOW_UNLOAD; // Prevent unloading
                 allowSave = ULTRA_ALLOW_SAVE;     // Prevent saving
                 clientViewRadius = ULTRA_CLIENT_VIEW_RADIUS; // Assign value based on preset
                 disableVisualEffects = ULTRA_DISABLE_VISUAL_EFFECTS; // Assign value based on preset
+                // NEW: Assign sun settings based on preset
+                sunHeightPercent = ULTRA_SUN_HEIGHT_PERCENT;
+                sunIntensity = ULTRA_SUN_INTENSITY;
                 aggressiveMode = true;
                 break;
             default:
                 // Fallback to BALANCED if preset is unknown
+                despawnThreshold = HYFINE_BALANCED_NPC_THRESHOLD;
                 despawnTicks = BALANCED_ITEM_DESPAWN_TICKS;
                 targetTps = BALANCED_TARGET_TPS;
                 allowUnload = BALANCED_ALLOW_UNLOAD;
                 allowSave = BALANCED_ALLOW_SAVE;
                 clientViewRadius = BALANCED_CLIENT_VIEW_RADIUS; // Assign value based on preset
                 disableVisualEffects = BALANCED_DISABLE_VISUAL_EFFECTS; // Assign value based on preset
+                // NEW: Assign sun settings based on preset (fallback to BALANCED)
+                sunHeightPercent = BALANCED_SUN_HEIGHT_PERCENT;
+                sunIntensity = BALANCED_SUN_INTENSITY;
                 aggressiveMode = false;
                 break;
         }
@@ -283,7 +324,9 @@ public class OptimizationEngine {
                         float currentBloomIntensity = clientEffects.getBloomIntensity();
                         float currentBloomPower = clientEffects.getBloomPower();
                         float currentSunshaftIntensity = clientEffects.getSunshaftIntensity();
-                        // Add more checks for other effects if needed
+                        // NEW: Get current sun values for logging
+                        float currentSunHeightPercent = clientEffects.getSunHeightPercent();
+                        float currentSunIntensity = clientEffects.getSunIntensity();
 
                         if (disableVisualEffects) {
                             // Disable effects
@@ -299,7 +342,15 @@ public class OptimizationEngine {
                                 clientEffects.setSunshaftIntensity(0.0f);
                                 LOGGER.info("[HyFine] Disabled Sunshaft Intensity for world '" + worldName + "'");
                             }
-                            // Add more disables for other effects if needed
+                            // NEW: Apply aggressive sun settings
+                            if (currentSunHeightPercent != sunHeightPercent) {
+                                clientEffects.setSunHeightPercent(sunHeightPercent);
+                                LOGGER.info("[HyFine] Set SunHeightPercent to " + sunHeightPercent + " for world '" + worldName + "' (preset: " + preset.name() + ")");
+                            }
+                            if (currentSunIntensity != sunIntensity) {
+                                clientEffects.setSunIntensity(sunIntensity);
+                                LOGGER.info("[HyFine] Set SunIntensity to " + sunIntensity + " for world '" + worldName + "' (preset: " + preset.name() + ")");
+                            }
                         } else {
                             // Re-enable effects to default values if they were disabled previously
                             // For simplicity, we'll assume defaults are known and only check if they were 0.0f before
@@ -315,6 +366,15 @@ public class OptimizationEngine {
                             if (currentSunshaftIntensity == 0.0f) {
                                 clientEffects.setSunshaftIntensity(0.3f); // Default value
                                 LOGGER.info("[HyFine] Re-enabled Sunshaft Intensity for world '" + worldName + "' to default");
+                            }
+                            // NEW: Re-enable sun settings to defaults if they were set aggressively
+                            if (currentSunHeightPercent != 100.0f) { // Assuming 100.0f is the default
+                                clientEffects.setSunHeightPercent(100.0f);
+                                LOGGER.info("[HyFine] Re-enabled SunHeightPercent for world '" + worldName + "' to default (100.0f)");
+                            }
+                            if (currentSunIntensity != 0.25f) { // Assuming 0.25f is the default
+                                clientEffects.setSunIntensity(0.25f);
+                                LOGGER.info("[HyFine] Re-enabled SunIntensity for world '" + worldName + "' to default (0.25f)");
                             }
                         }
                     } else {
@@ -401,6 +461,101 @@ public class OptimizationEngine {
                  LOGGER.severe("[HyFine] Failed to queue player view radius optimization for world '" + worldName + "' via world.execute(): " + e.getMessage());
                  e.printStackTrace();
             }
+
+            // --- NEW: Apply Proactive NPC Despawn Optimization ---
+            // Define umbral basado en preset
+            
+            switch (preset) {
+                case LOW:
+                    despawnThreshold = HYFINE_LOW_NPC_THRESHOLD;
+                    break;
+                case BALANCED:
+                    despawnThreshold = HYFINE_BALANCED_NPC_THRESHOLD;
+                    break;
+                case ULTRA:
+                    despawnThreshold = HYFINE_ULTRA_NPC_THRESHOLD;
+                    break;
+                default:
+                    despawnThreshold = HYFINE_BALANCED_NPC_THRESHOLD; // Fallback
+                    break;
+            }
+
+            // Intentar obtener WorldSpawnData y verificar el conteo
+            try {
+                com.hypixel.hytale.component.Store<EntityStore> entityStore = world.getEntityStore().getStore(); // Necesario para acceder al recurso
+                WorldSpawnData worldSpawnData = entityStore.getResource(WorldSpawnData.getResourceType()); // Obtener el recurso
+
+                if (worldSpawnData != null) {
+                    int currentActualNPCs = worldSpawnData.getActualNPCs();
+                    LOGGER.info("[HyFine] World '" + worldName + "' has " + currentActualNPCs + " actual NPCs (threshold: " + despawnThreshold + ").");
+
+                    if (currentActualNPCs > despawnThreshold) {
+                        int excessNPCs = currentActualNPCs - despawnThreshold;
+                        int toDespawnCount = Math.min(excessNPCs, HYFINE_DESPAWN_BATCH_SIZE);
+                        LOGGER.info("[HyFine] Attempting proactive despawn of " + toDespawnCount + " NPCs in world '" + worldName + "' (preset: " + preset.name() + ").");
+
+                        // Envolver la lógica de despawn en world.execute para seguridad del hilo ECS
+                        world.execute(() -> {
+                            try {
+                                // *** LÓGICA DE DESPASWN ***
+                                int remainingToDespawn = toDespawnCount;
+                                int actuallyDespawned = 0;
+
+                                // Iterar entornos
+                                int[] environmentIndexes = worldSpawnData.getWorldEnvironmentSpawnDataIndexes();
+                                for (int envIndex : environmentIndexes) {
+                                    if (remainingToDespawn <= 0) break;
+
+                                    WorldEnvironmentSpawnData envData = worldSpawnData.getWorldEnvironmentSpawnData(envIndex);
+                                    if (envData == null) continue;
+
+                                    // Iterar roles dentro del entorno
+                                    // Asumiendo que el paquete es correcto según tu descompilación
+                                    Int2ObjectMap<WorldNPCSpawnStat> npcStatMap = envData.getNpcStatMap();
+                                    if (npcStatMap != null) {
+                                        for (Int2ObjectMap.Entry<WorldNPCSpawnStat> entry : npcStatMap.int2ObjectEntrySet()) {
+                                            WorldNPCSpawnStat stat = entry.getValue();
+                                            int roleIndex = stat.getRoleIndex();
+                                            int actualCountForRole = stat.getActual();
+
+                                            if (actualCountForRole > 0) { // Si hay NPCs de este rol vivos
+                                                int countToDespawnFromThisRole = Math.min(actualCountForRole, remainingToDespawn);
+                                                // Reducir el conteo específico del rol
+                                                stat.adjustActual(-countToDespawnFromThisRole);
+                                                // Opcional: Reducir también el conteo global
+                                                worldSpawnData.untrackNPC(envIndex, roleIndex, countToDespawnFromThisRole);
+
+                                                remainingToDespawn -= countToDespawnFromThisRole;
+                                                actuallyDespawned += countToDespawnFromThisRole;
+                                                LOGGER.info("[HyFine] Adjusted actual count down by " + countToDespawnFromThisRole + " for role index " + roleIndex + " in environment " + envIndex + ".");
+                                                if (remainingToDespawn <= 0) break;
+                                            }
+                                        }
+                                    } else {
+                                        LOGGER.warning("[HyFine] npcStatMap is null for environment index " + envIndex + " in world '" + worldName + "'. Cannot iterate roles for despawn.");
+                                    }
+                                } // Fin del bucle de entornos
+
+                                LOGGER.info("[HyFine] Adjusted global and role-specific NPC counts for " + actuallyDespawned + " NPCs in world '" + worldName + "'. The spawning system should now despawn NPCs based on the reduced counts.");
+
+                            } catch (Exception e) {
+                                LOGGER.severe("[HyFine] Error during proactive despawn execution on ECS thread for world '" + worldName + "': " + e.getMessage());
+                                e.printStackTrace();
+                            }
+                        }); // Fin de world.execute para despawn
+
+                    } else {
+                        LOGGER.fine("[HyFine] World '" + worldName + "' actual NPC count (" + currentActualNPCs + ") is within threshold (" + despawnThreshold + "), no proactive despawn needed.");
+                    }
+                } else {
+                    LOGGER.warning("[HyFine] WorldSpawnData resource is null for world '" + worldName + "', cannot perform proactive despawn check.");
+                }
+            } catch (Exception e) {
+                 System.err.println("[HyFine] Failed to access WorldSpawnData for proactive despawn in world '" + worldName + "': " + e.getMessage());
+                 LOGGER.severe("[HyFine] Failed to access WorldSpawnData for proactive despawn in world '" + worldName + "': " + e.getMessage());
+                 e.printStackTrace();
+            }
+            // --- END NEW: Apply Proactive NPC Despawn Optimization ---
 
 
             // --- 2. Apply Emergency/Moderate TPS-based adjustments ---
