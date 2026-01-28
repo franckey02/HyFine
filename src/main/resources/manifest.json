@@ -1,12 +1,12 @@
 {
   "Name": "HyFine",
-  "Group": "me.temxs27",
-  "Version": "1.1.0",
+  "Group": "me.temxs27 & JavierC",
+  "Version": "1.1.1",
   "Main": "me.temxs27.hyfine.HyFine",
   "Description": "Server-side performance optimizer",
   "Authors": [
     {
-      "Name": "Temxs27"
+      "Name": "Temxs27 & JavierC"
     }
   ],
   "IncludeAssetPack": false
